@@ -89,8 +89,8 @@ export async function createActivity(rawInput: unknown) {
   const [user, team] = await Promise.all([User.findById(userId).lean(), Team.findById(teamId).lean()]);
   if (!user) throw new HttpError(404, 'User not found');
   if (!team) throw new HttpError(404, 'Team not found');
-  const isMember = user.team?.toString() === teamId.toString() || team.members.some((member) => member.toString() === userId.toString());
-  if (!isMember) throw new HttpError(400, 'User is not a member of that team');
+  // User.team is the source of truth for which team a student's points count toward.
+  if (user.team?.toString() !== teamId.toString()) throw new HttpError(400, 'User is not a member of that team');
 
   const activity = await Activity.create({ user: userId, team: teamId, type, minutes, points: calculatePoints(minutes), occurredAt: new Date() });
   return activity.toObject();
@@ -118,8 +118,8 @@ export async function createTeam(rawInput: unknown) {
   const team = await Team.create({ name, mascot, members });
   // A student belongs to one team at a time, so move members out of their previous teams.
   if (members.length > 0) {
-    await Team.updateMany({ _id: { $ne: team._id } }, { $pull: { members: { $in: members } } });
     await User.updateMany({ _id: { $in: members } }, { $set: { team: team._id } });
+    await Team.updateMany({ _id: { $ne: team._id }, members: { $in: members } }, { $pull: { members: { $in: members } } });
   }
   return team.toObject();
 }
